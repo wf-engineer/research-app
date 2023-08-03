@@ -1,0 +1,8 @@
+streamlit
+openai
+google.cloud.bigquery
+pandas
+matplotlib
+requests
+numpy
+scipy
