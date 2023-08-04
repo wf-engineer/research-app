@@ -65,6 +65,8 @@ def query(ans, structure):
     selected_codes = [code.replace(".", "") for code in selected_codes]
     selected_codes = list(set(selected_codes))
 
+    st.write("These are the specific codes being used for this index:", selected_codes)
+
     return structure.format("' or string_field_1= '".join(selected_codes), selected_date[0], selected_date[1])
 
 def query_data_and_sort(q):
@@ -93,7 +95,8 @@ def process_user_input(user_input):
     try:
         df = query_data_and_sort(query(ans, train_resources[0]))
         return df
-    except:
+    except Exception as e:
+        print(e)
         return None
 
 def plot_data(assistant, df, alpha, option):
