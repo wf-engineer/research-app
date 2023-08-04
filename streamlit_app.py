@@ -8,6 +8,7 @@ import random
 import requests
 import numpy as np
 from scipy.signal import savgol_filter
+from datetime import datetime, date
 
 # # Install required packages
 # try:
@@ -18,9 +19,13 @@ from scipy.signal import savgol_filter
 
 if 'text_input_id' not in st.session_state:
     st.session_state['text_input_id'] = 0
+if 'user_input' not in st.session_state:
     st.session_state['user_input'] = None
 
 checkbox_options = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+def remove_empty_string(arr):
+    return filter(lambda x: x != '', arr)
 
 # Streamlit app
 st.set_page_config(layout="wide")
@@ -56,21 +61,50 @@ def chat_with_model(message):
     )
     return response.choices[0].text.strip()
 
-def query(ans, structure):
-    chain = eval(ans[ans.index('['):ans.index(']')+1])
-    selected_codes = chain[:-2]
-    selected_date = chain[-2:]
-    selected_codes = selected_codes + \
-        [code.split('.')[0] for code in selected_codes if '.' in code]
-    selected_codes = [code.replace(".", "") for code in selected_codes]
-    selected_codes = list(set(selected_codes))
+def query(selected_date, selected_codes, selected_columns):
+    if selected_columns==[]:
+        return "select date_field_2, count(string_field_0) from `kythera-390515.All_claims_1.medical_claims` where (string_field_1= '{}') and date_field_2 BETWEEN '{}' AND '{}' group by date_field_2 ORDER BY date_field_2 ASC".format("' or string_field_1= '".join(selected_codes), selected_date[0], selected_date[1])
+    
+    base_query= "select date_field_2, count(string_field_0) from `kythera-390515.All_claims_1.medical_claims`"
+    
+    # Define conditions
+    conditions = {
 
-    return structure.format("' or string_field_1= '".join(selected_codes), selected_date[0], selected_date[1])
+        "age": {
+            "Children": "(int64_field_5 > 2002 and int64_field_5 < 2023)",
+            "Adults": "(int64_field_5 > 1963 and int64_field_5 < 2002)",
+            "Eldery": "(int64_field_5 < 1963)"
+        },
+        "gender": {
+            "Male": "(string_field_7 = 'M')",
+            "Female": "(string_field_7 = 'F')"
+        },
+        "region": {
+            "Northeast": "(string_field_6 = 'Northeast')",
+            "Southwest": "(string_field_6 = 'Southwest')",
+            "West": "(string_field_6 = 'West')",
+            "Southeast": "(string_field_6 = 'Southeast')",
+            "Midwest": "(string_field_6 = 'Midwest')"
+        }
+    }
+
+    all_conditions = [" or ".join([conditions[category][item] for item in selected_columns if item in conditions[category].keys()]) for category in conditions]
+    
+    # Append to the base query
+    base_query += " where (" + ") and (".join(remove_empty_string(all_conditions)) + ")"
+    base_query += " and (string_field_1= '{}') and (date_field_2 BETWEEN '{}' AND '{}') group by date_field_2 ORDER BY date_field_2 ASC"
+    base_query = base_query.format("' or string_field_1= '".join(selected_codes), selected_date[0], selected_date[1])
+    base_query = base_query.replace("and ()", "")
+
+    return base_query
 
 def query_data_and_sort(q):
     QUERY = (q)
     query_job = client.query(QUERY)
-    rows = query_job.result()
+    try:
+        rows = query_job.result()
+    except Exception as error:
+        raise error
     df = pd.DataFrame(data=[list(row.values())
                       for row in rows], columns=list(rows.schema))
     df.rename(columns={list(df.columns)[0]: 'Date', list(
@@ -79,7 +113,9 @@ def query_data_and_sort(q):
     return df
 
 @st.cache_data(ttl=3600)
-def process_user_input(user_input):
+def process_user_input(user_input, selected_date, selected_columns):
+    if selected_date[1] is None:
+        return
     # start conversation
     conversation = ""
     file_contents = requests.get(train_resources[5]).text
@@ -90,8 +126,16 @@ def process_user_input(user_input):
     # ask openai
     conversation += "User: " + user_input + "\n"
     ans = chat_with_model(conversation)
+
+    chain = eval(ans[ans.index('['):ans.index(']')+1])
+    selected_codes = chain[:-2]
+    selected_codes = selected_codes + \
+        [code.split('.')[0] for code in selected_codes if '.' in code]
+    selected_codes = [code.replace(".", "") for code in selected_codes]
+    selected_codes = list(set(selected_codes))
+    print(selected_codes, selected_date, selected_columns)
     try:
-        df = query_data_and_sort(query(ans, train_resources[0]))
+        df = query_data_and_sort(query(selected_date, selected_codes, selected_columns))
         return df
     except:
         return None
@@ -134,44 +178,44 @@ def plot_data(assistant, df, alpha, option):
         plt.show()
     assistant.pyplot(plt)
 
-def download_data(df, alpha, options):
-    try:
-        shift=list(options)[0]
-    except:
-        shift=0
-    if alpha <= 0:
-        index = df.fillna(0)
-        sz = len(index)
-        x = np.linspace(0.0, sz - 1, sz)
-        y = index.Volume
-        yhat = savgol_filter(y, 91, 3)
-        result = pd.DataFrame({'Date': df['Date'], 'Volume': yhat})
-    else:
-        result = df.set_index('Date')['Volume'].ewm(alpha=alpha).mean().reset_index()
-        result2 = result.iloc[shift::7]   
-
-    result.to_csv('dowloads/index.csv', index=False)
-    result2.to_csv('dowloads/index_sampled.csv', index=False)
-    print('Downloaded')
- 
-
+st.title("Chat with IMX-GPT")
 col1, col2 = st.columns([0.3, 0.7], gap="medium")
+
+st.divider()  # 👈 Draws a horizontal rule
+
+st.subheader("News")
+st.text("Some news goes here....")
+
+st.divider() # 👈 Draws a horizontal rule
+st.subheader("Sandbox")
+st.button("Sandbox", type="primary")
 
 listbox = []
 slider = 1.0
+selected_date = [datetime(2020, 1, 1), date.today()]
+selected_columns = []
+checkboxes = [False,False,False,False,False,False,False,False,False,False]
 df = pd.DataFrame()
 
-def on_download_button_clicked():
-    download_data(df, slider, listbox)
+def on_demographics_button_clicked():
+    process_user_input(user_input, selected_date, selected_columns)
 
 with col1:
     listbox = st.selectbox("Select days", checkbox_options)
     slider = st.slider("Select Alpha", 0.0, 1.0, 1.0, 0.05)
-    butt_col1, butt_col2 = st.columns(2)
-    with butt_col1:
-        download_button = st.button("Download", on_click=on_download_button_clicked)
-    with butt_col2:
-        feed_button = st.button("Feed")
+    sub_col1, sub_col2 = st.columns([0.4, 0.6])
+    with sub_col1:
+        ind = 0
+        # For each column in the dataframe, create a new checkbox
+        for col in ['Children', 'Adults', 'Eldery', 'Male', 'Female', 'Northeast', 'Southwest', 'West', 'Southeast', 'Midwest']:
+            checkbox = st.checkbox(label=col, value=checkboxes[ind])
+            checkboxes[ind] = checkbox
+            if checkbox:
+                selected_columns.append(col)
+            ind += 1
+    with sub_col2:
+        selected_date = st.date_input(label='Select Date', value=selected_date, format="MM/DD/YYYY")
+        demographics_button = st.button("Run Demographics", type='primary', on_click=on_demographics_button_clicked)
 
 with col2:
     placeholder = st.empty()
@@ -201,8 +245,12 @@ with col2:
     user.write(user_input)
     assistant = st.chat_message('assistant')
     assistant.write(wait_message)
-    df = process_user_input(user_input)
+    df = process_user_input(user_input, selected_date, selected_columns)
+    download_data = df.to_csv()
+    st.download_button("Download CSV", data=download_data, file_name=datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".csv", disabled=(download_data == ''))
+    feed_button = st.button("Feed")
     if df is not None:
         plot_data(assistant, df, slider, listbox)
     else:
         assistant.write('Sorry! Something went wrong, try again...')
+
