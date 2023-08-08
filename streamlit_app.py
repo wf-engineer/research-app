@@ -148,7 +148,6 @@ def get_article_content(url):
         article_title = titles[0].get_text(strip=True)
         return article_title, article_text
 
-@st.cache_data(ttl=3600)
 def google_search(keywords):
     results = []
 
@@ -159,7 +158,7 @@ def google_search(keywords):
 
     return results
 
-@st.cache_data(ttl=3600)
+@st.cache_data()
 def get_news(selected_codes):
     
     # Start the conversation
