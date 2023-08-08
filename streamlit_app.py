@@ -9,6 +9,9 @@ import requests
 import numpy as np
 from scipy.signal import savgol_filter
 from datetime import datetime, date
+from bs4 import BeautifulSoup
+from googlesearch import search
+import re
 
 # # Install required packages
 # try:
@@ -29,6 +32,18 @@ def remove_empty_string(arr):
 
 # Streamlit app
 st.set_page_config(layout="wide")
+
+st.title("Chat with IMX-GPT")
+col1, col2 = st.columns([0.3, 0.7], gap="medium")
+
+st.divider()  # 👈 Draws a horizontal rule
+
+st.subheader("News")
+news_container = st.container()
+
+st.divider() # 👈 Draws a horizontal rule
+st.subheader("Sandbox")
+st.button("Sandbox", type="primary")
 
 @st.cache_resource
 def initialize():
@@ -113,9 +128,52 @@ def query_data_and_sort(q):
     return df
 
 @st.cache_data(ttl=3600)
-def process_user_input(user_input, selected_date, selected_columns):
-    if selected_date[1] is None:
-        return
+def get_article_content(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    article_text = ""
+
+    # Extract the article content using common HTML tags
+    paragraphs = soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+    for paragraph in paragraphs:
+        article_text += paragraph.get_text() + " "
+
+    # Clean up the text by removing extra spaces and newlines
+    article_text = re.sub(r'\s+', ' ', article_text).strip()
+
+    # Extract the article title using title HTML tag
+    titles = soup.find_all('title')
+    if len(titles) == 0:
+        return "", article_text
+    else:
+        article_title = titles[0].get_text(strip=True)
+        return article_title, article_text
+
+@st.cache_data(ttl=3600)
+def google_search(keywords):
+    results = []
+
+    for keyword in keywords:
+        for url in search(keyword, stop=5):  # Limiting to 5 results per keyword
+            article_title, article_text = get_article_content(url)
+            results.append({'title': article_title, 'link': url, 'content': article_text})
+
+    return results
+
+@st.cache_data(ttl=3600)
+def get_news(selected_codes):
+    
+    # Start the conversation
+    user_input = 'Please provide a list of keywords derived form the following list of ICD10 codes: ' + ', '.join(selected_codes)
+    ans = chat_with_model(user_input)
+    keywords = [keyword for keyword in re.split("[\n,]", ans) if '.' in keyword or '-' in keyword][:3]
+    print("KEYWORDS: ", keywords)
+    search_results = google_search(keywords)
+
+    return search_results
+
+@st.cache_data(ttl=3600)
+def process_user_input(user_input, selected_columns):
     # start conversation
     conversation = ""
     file_contents = requests.get(train_resources[5]).text
@@ -126,17 +184,21 @@ def process_user_input(user_input, selected_date, selected_columns):
     # ask openai
     conversation += "User: " + user_input + "\n"
     ans = chat_with_model(conversation)
-
     chain = eval(ans[ans.index('['):ans.index(']')+1])
+    # get selected codes from chat-gpt ans
     selected_codes = chain[:-2]
     selected_codes = selected_codes + \
         [code.split('.')[0] for code in selected_codes if '.' in code]
     selected_codes = [code.replace(".", "") for code in selected_codes]
     selected_codes = list(set(selected_codes))
-    print(selected_codes, selected_date, selected_columns)
+    # get selected dates from chat-gpt ans
+    selected_date = chain[-2:]
+    st.write("----- The following information is for debugging -----")
+    st.write("Selected codes:", selected_codes)
+    st.write("Selected Dates: " + selected_date[0] + ' - ' + selected_date[1])
     try:
         df = query_data_and_sort(query(selected_date, selected_codes, selected_columns))
-        return df
+        return df, selected_codes
     except:
         return None
 
@@ -166,7 +228,6 @@ def plot_data(assistant, df, alpha, option):
         # Sampling every 7 values from the 'original' data frame
         sampled_original = original.iloc[shift::7]  # Select every 7th value
         # type of sampled_original
-        print("TYPE OF SAMPLED ORIGINAL", type(sampled_original))
         sampled_original = sampled_original.reindex(original.index)  # Reindex with the same index as 'original'
         # Plot the sampled data frame with larger and colored dots
         sampled_original.plot(grid='on', label='Sampled ('+checkbox_options[shift]+'s)', marker='o', markersize=4, color='red')
@@ -177,18 +238,6 @@ def plot_data(assistant, df, alpha, option):
         plt.title('Volume Plot')
         plt.show()
     assistant.pyplot(plt)
-
-st.title("Chat with IMX-GPT")
-col1, col2 = st.columns([0.3, 0.7], gap="medium")
-
-st.divider()  # 👈 Draws a horizontal rule
-
-st.subheader("News")
-st.text("Some news goes here....")
-
-st.divider() # 👈 Draws a horizontal rule
-st.subheader("Sandbox")
-st.button("Sandbox", type="primary")
 
 listbox = []
 slider = 1.0
@@ -214,7 +263,6 @@ with col1:
                 selected_columns.append(col)
             ind += 1
     with sub_col2:
-        selected_date = st.date_input(label='Select Date', value=selected_date, format="MM/DD/YYYY")
         demographics_button = st.button("Run Demographics", type='primary', on_click=on_demographics_button_clicked)
 
 with col2:
@@ -225,7 +273,6 @@ with col2:
         value="",
         key=st.session_state['text_input_id']
     )
-    print("USER INPUT: ", user_input)
     if (user_input or "") == "":
         if st.session_state['user_input'] == None:
             st.stop()
@@ -245,12 +292,22 @@ with col2:
     user.write(user_input)
     assistant = st.chat_message('assistant')
     assistant.write(wait_message)
-    df = process_user_input(user_input, selected_date, selected_columns)
+    df, selected_codes = process_user_input(user_input, selected_columns)
     download_data = df.to_csv()
     st.download_button("Download CSV", data=download_data, file_name=datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".csv", disabled=(download_data == ''))
     feed_button = st.button("Feed")
     if df is not None:
         plot_data(assistant, df, slider, listbox)
+        search_results = get_news(selected_codes)
+
+        if search_results:
+            for result in search_results:
+                if len(result['content']) > 0 and len(result['title']) > 0:
+                    expander = news_container.expander(result['title'])
+                    expander.write(result['content'][:300] + "...")
+                    expander.write(result['link'])
+        else:
+            news_container.write("No results found.")
     else:
         assistant.write('Sorry! Something went wrong, try again...')
 

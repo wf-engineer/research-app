@@ -6,3 +6,4 @@ matplotlib
 requests
 numpy
 scipy
+bs4
