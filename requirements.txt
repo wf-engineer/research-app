@@ -1,5 +1,6 @@
 streamlit
 openai
+google
 google.cloud.bigquery
 pandas
 matplotlib
@@ -7,4 +8,3 @@ requests
 numpy
 scipy
 bs4
-googlesearch-python
