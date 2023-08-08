@@ -7,4 +7,4 @@ requests
 numpy
 scipy
 bs4
-googlesearch
+googlesearch-python
