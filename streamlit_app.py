@@ -127,7 +127,6 @@ def query_data_and_sort(q):
     df = df.sort_values('Date', ascending=True)
     return df
 
-@st.cache_data(ttl=3600)
 def get_article_content(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
