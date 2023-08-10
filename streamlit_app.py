@@ -76,6 +76,14 @@ def chat_with_model(message):
     )
     return response.choices[0].text.strip()
 
+if 'conversation' not in st.session_state:
+    conversation = ""
+    file_contents = requests.get(train_resources[5]).text
+    conversation += "User: " + file_contents + "\n"
+    ans = chat_with_model(conversation)
+    conversation += "ChatGPT: " + ans + "\n"
+    st.session_state['conversation'] = conversation
+
 def query(selected_date, selected_codes, selected_columns):
     if selected_columns==[]:
         return "select date_field_2, count(string_field_0) from `kythera-390515.All_claims_1.medical_claims` where (string_field_1= '{}') and date_field_2 BETWEEN '{}' AND '{}' group by date_field_2 ORDER BY date_field_2 ASC".format("' or string_field_1= '".join(selected_codes), selected_date[0], selected_date[1])
@@ -173,24 +181,29 @@ def get_news(selected_codes):
 @st.cache_data(ttl=3600)
 def process_user_input(user_input, selected_columns):
     # start conversation
-    conversation = ""
-    file_contents = requests.get(train_resources[5]).text
-    conversation += "User: " + file_contents + "\n"
-    ans = chat_with_model(conversation)
-    conversation += "ChatGPT: " + ans + "\n"
-
+    conversation = st.session_state['conversation']
+    print(conversation)
     # ask openai
     conversation += "User: " + user_input + "\n"
     ans = chat_with_model(conversation)
+    conversation += "ChatGPT: " + ans + "\n"
     chain = eval(ans[ans.index('['):ans.index(']')+1])
-    # get selected codes from chat-gpt ans
+
+    st.session_state['conversation'] = conversation
+
+    try:
+        chain.remove('start_date')
+    except: 
+        pass
+    try:
+        chain.remove('end_date')
+    except: 
+        pass
+
     selected_codes = chain[:-2]
-    selected_codes = selected_codes + \
-        [code.split('.')[0] for code in selected_codes if '.' in code]
-    selected_codes = [code.replace(".", "") for code in selected_codes]
-    selected_codes = list(set(selected_codes))
-    # get selected dates from chat-gpt ans
     selected_date = chain[-2:]
+    selected_codes=[code.replace(".","") for code in selected_codes]
+
     st.write("----- The following information is for debugging -----")
     st.write("Selected codes:", selected_codes)
     st.write("Selected Dates: " + selected_date[0] + ' - ' + selected_date[1])
