@@ -58,10 +58,25 @@ def initialize():
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
     client = bigquery.Client(project='kythera-390515')
     wait = requests.get(train_resources[4]).text
+    fg_csv = pd.read_csv("fg.csv")
 
-    return client, train_resources, wait
+    all_option = np.array(["Show All"])
 
-client, train_resources, wait = initialize()
+    hosp_name_array = fg_csv["Hospital Name"].to_numpy()
+    
+    for i in range(len(hosp_name_array)):
+        hosp_name_array[i] = "[Hospital] - " + hosp_name_array[i]
+
+    network_name_array = fg_csv["IDN"].unique()
+    for i in range(len(network_name_array)):
+        if str(network_name_array) != '':
+            network_name_array[i] = "[Network] - " + str(network_name_array[i])
+
+    fg_options = np.concatenate([all_option, hosp_name_array, network_name_array], axis=0)
+
+    return client, train_resources, wait, fg_csv, fg_options
+
+client, train_resources, wait, fg_csv, fg_options = initialize()
 
 @st.cache_data
 def chat_with_model(message):
@@ -261,6 +276,7 @@ def on_demographics_button_clicked():
     process_user_input(user_input, selected_date, selected_columns)
 
 with col1:
+    hopital = st.selectbox("Select hospital/network", fg_options, placeholder="Select Hospital or Network")
     listbox = st.selectbox("Select days", checkbox_options)
     slider = st.slider("Select Alpha", 0.0, 1.0, 1.0, 0.05)
     sub_col1, sub_col2 = st.columns([0.4, 0.6])
