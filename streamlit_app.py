@@ -62,7 +62,7 @@ def initialize():
 
     all_option = np.array(["Show All"])
 
-    hosp_name_array = fg_csv["Hospital Name"].to_numpy()
+    hosp_name_array = fg_csv["Hospital Name"].unique()
     
     for i in range(len(hosp_name_array)):
         hosp_name_array[i] = "[Hospital] - " + hosp_name_array[i]
@@ -276,7 +276,15 @@ def on_demographics_button_clicked():
     process_user_input(user_input, selected_date, selected_columns)
 
 with col1:
-    hopital = st.selectbox("Select hospital/network", fg_options, placeholder="Select Hospital or Network")
+    hospital = st.selectbox("Select hospital/network", fg_options, placeholder="Select Hospital or Network")
+    if hospital == "Show All":
+        st.write(hospital)
+    elif hospital.split(" - ")[0] == '[Hospital]':
+        hosp_name = hospital.split(" - ")[1]
+        st.write(fg_csv[fg_csv["Hospital Name"] == hosp_name]["NPI Number"].values)
+    elif hospital.split(" - ")[0] == '[Network]':
+        network_name = hospital.split(" - ")[1]
+        st.write(fg_csv[fg_csv["IDN"] == network_name]["NPI Number"].values)
     listbox = st.selectbox("Select days", checkbox_options)
     slider = st.slider("Select Alpha", 0.0, 1.0, 1.0, 0.05)
     sub_col1, sub_col2 = st.columns([0.4, 0.6])
